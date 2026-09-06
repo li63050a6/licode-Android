@@ -11,7 +11,8 @@ data class ServerConfig(
     val host: String = "",                // host:port 或 ip:port
     val scheme: String = "http",          // "http" | "https"
     val trustAllCerts: Boolean = false,   // 信任自签名证书
-    val username: String? = null,         // 预填登录用户名
+    val username: String? = null,         // 用户名（默认 licode）
+    val password: String? = null,         // 密码（服务器启用登录时填）
 ) {
     val baseUrl: String
         get() = "$scheme://$host"

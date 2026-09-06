@@ -14,7 +14,7 @@ android {
         minSdk = 21
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.0.0.1"
     }
 
     buildTypes {
@@ -50,5 +50,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // rootfs tar.gz/xz/bz2 解压
+    implementation("org.apache.commons:commons-compress:1.26.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

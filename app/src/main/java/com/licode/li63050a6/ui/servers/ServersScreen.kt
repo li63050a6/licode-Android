@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -61,6 +62,7 @@ import java.util.UUID
 fun ServersScreen(
     onEnterChat: () -> Unit,
     onNeedLogin: (String) -> Unit,
+    onLocalServer: () -> Unit,
 ) {
     val vm: ServersViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -84,6 +86,11 @@ fun ServersScreen(
                     Column {
                         Text("licode", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text("AI 编程助手 · 手机客户端", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onLocalServer) {
+                        Icon(Icons.Default.Settings, contentDescription = "本机环境")
                     }
                 },
             )
@@ -208,7 +215,11 @@ private fun ServerCard(
                         Text(if (connecting) "连接中…" else "探测中…", style = MaterialTheme.typography.bodySmall)
                     } else {
                         Text(
-                            if (server.username?.isNotBlank() == true) "需登录" else "免登录",
+                            when {
+                                !server.password.isNullOrBlank() -> "凭据已设置"
+                                server.username?.isNotBlank() == true -> "需登录"
+                                else -> "免登录"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary,
                         )
@@ -252,6 +263,7 @@ private fun ServerEditDialog(
     var host by remember { mutableStateOf(server?.host ?: "") }
     var scheme by remember { mutableStateOf(server?.scheme ?: "http") }
     var username by remember { mutableStateOf(server?.username ?: "") }
+    var password by remember { mutableStateOf(server?.password ?: "") }
     var trustAll by remember { mutableStateOf(server?.trustAllCerts ?: false) }
     val id = server?.id ?: UUID.randomUUID().toString()
 
@@ -293,6 +305,14 @@ private fun ServerEditDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("密码（服务器启用登录时填写）") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         },
         confirmButton = {
@@ -307,6 +327,7 @@ private fun ServerEditDialog(
                             scheme = scheme,
                             trustAllCerts = trustAll,
                             username = username.ifBlank { null },
+                            password = password.ifBlank { null },
                         )
                     )
                 },

@@ -9,6 +9,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,11 +55,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -70,7 +77,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.licode.li63050a6.data.AppSettings
+import com.licode.li63050a6.data.VoiceInputController
 import com.licode.li63050a6.data.WsState
+import com.licode.li63050a6.ui.voice.VoiceOverlay
 import com.licode.li63050a6.domain.Attachment
 import com.licode.li63050a6.domain.ToolUi
 import com.licode.li63050a6.domain.UiMessage
@@ -80,7 +90,7 @@ private const val DEFAULT_TITLE = "新对话"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(onBack: () -> Unit) {
+fun ChatScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
     val vm: ChatViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -90,6 +100,10 @@ fun ChatScreen(onBack: () -> Unit) {
     var sessionMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var inputKey by remember { mutableStateOf(0) }
+    var text by remember { mutableStateOf(TextFieldValue("")) }
+
+    var voiceVisible by remember { mutableStateOf(false) }
+    var voiceText by remember { mutableStateOf("") }
 
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -99,12 +113,35 @@ fun ChatScreen(onBack: () -> Unit) {
         }
     }
 
+    val voiceController = remember { VoiceInputController(context) }
+    var voiceError by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(Unit) {
+        voiceController.onResult = { text ->
+            voiceText = text
+            voiceVisible = false
+        }
+        voiceController.onCancel = { voiceVisible = false }
+        voiceController.onError = { voiceError = it }
+        onDispose { voiceController.release() }
+    }
+
     LaunchedEffect(state.error) {
         state.error?.let {
             snackbar.showSnackbar(it)
             vm.clearError()
         }
     }
+    LaunchedEffect(voiceError) {
+        voiceError?.let {
+            snackbar.showSnackbar(it)
+            voiceError = null
+        }
+    }
+
+    val voiceState by voiceController.state.collectAsState()
+    val voiceLevel by voiceController.level.collectAsState()
+    val voiceAvailable = voiceController.isAvailable()
+
     LaunchedEffect(state.status) {
         state.status?.let {
             snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
@@ -177,6 +214,14 @@ fun ChatScreen(onBack: () -> Unit) {
                                     onClick = {
                                         moreMenu = false
                                         state.currentId?.let { vm.deleteSession(it) }
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("设置") },
+                                    leadingIcon = { Icon(Icons.Default.Settings, null) },
+                                    onClick = {
+                                        moreMenu = false
+                                        onOpenSettings()
                                     },
                                 )
                             }
@@ -278,19 +323,30 @@ fun ChatScreen(onBack: () -> Unit) {
 
             ChatInputBar(
                 key = inputKey,
+                text = text,
+                onTextChange = { text = it },
                 onSend = { content ->
                     if (content.isNotBlank() || selectedPicks.isNotEmpty()) {
                         val attachments = selectedPicks.map { it.toAttachment() }
                         vm.sendMessage(content, attachments)
                         selectedPicks = emptyList()
-                        inputKey++   // 清空输入框
+                        inputKey++
                     }
+                    voiceText = ""
                 },
                 onPickImage = { picker.launch("image/*") },
                 onStop = { vm.interrupt() },
                 streaming = state.streaming,
+                voiceAvailable = voiceAvailable,
+                onStartVoice = { voiceVisible = true; voiceController.start() },
+                onStopVoice = { voiceController.finish(cancel = false) },
+                voiceText = voiceText,
             )
         }
+    }
+
+    if (voiceVisible) {
+        VoiceOverlay(state = voiceState, level = voiceLevel, onCancel = { voiceController.finish(cancel = true) })
     }
 
     state.pendingAsk?.let { ask ->
@@ -316,13 +372,25 @@ private fun ConnectionDot(state: WsState) {
 @Composable
 private fun ChatInputBar(
     key: Int,
+    text: TextFieldValue,
+    onTextChange: (TextFieldValue) -> Unit,
     onSend: (String) -> Unit,
     onPickImage: () -> Unit,
     onStop: () -> Unit,
     streaming: Boolean,
+    voiceAvailable: Boolean,
+    onStartVoice: () -> Unit,
+    onStopVoice: () -> Unit,
+    voiceText: String,
 ) {
-    // 用 key 强制重创建以清空输入
-    var text by remember { mutableStateOf(TextFieldValue("")) }
+    // 语音识别结果回写输入框
+    LaunchedEffect(voiceText) {
+        if (voiceText.isNotBlank()) {
+            val newText = (text.text + voiceText).trimStart()
+            onTextChange(TextFieldValue(newText, TextRange(newText.length)))
+        }
+    }
+
     Surface(tonalElevation = 3.dp) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -333,8 +401,13 @@ private fun ChatInputBar(
             }
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
+                onValueChange = onTextChange,
+                modifier = Modifier.weight(1f).pointerInput(voiceAvailable) {
+                    if (!voiceAvailable) return@pointerInput
+                    detectTapGestures(
+                        onLongPress = { onStartVoice() },
+                    )
+                },
                 placeholder = { Text("输入消息…") },
                 maxLines = 4,
                 shape = RoundedCornerShape(24.dp),

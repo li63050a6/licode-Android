@@ -77,7 +77,9 @@ class ServersViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * 尝试连接一台服务器：
-     * 已登录/免登录 → 已就绪并设为当前；未登录 → 需要登录；连不上 → 离线。
+     * 已登录/免登录 → 已就绪并设为当前；
+     * 配置了用户名密码 → 用其自动登录；
+     * 未登录且无凭据 → 需要登录；连不上 → 离线。
      */
     fun connect(cfg: ServerConfig, onResult: (ConnectResult) -> Unit) {
         viewModelScope.launch {
@@ -87,11 +89,17 @@ class ServersViewModel(app: Application) : AndroidViewModel(app) {
                 if (!client.healthOk()) return@withContext ConnectResult.离线
                 val auth = client.authInfo()
                 if (auth?.enabled == true) {
-                    if (client.version() != null) {
-                        store.setCurrent(cfg.id)
-                        ConnectResult.已就绪
-                    } else {
-                        ConnectResult.需要登录
+                    when {
+                        client.version() != null -> {
+                            store.setCurrent(cfg.id)
+                            ConnectResult.已就绪
+                        }
+                        !cfg.username.isNullOrBlank() && !cfg.password.isNullOrBlank() &&
+                            client.login(cfg.username!!, cfg.password!!) -> {
+                            store.setCurrent(cfg.id)
+                            ConnectResult.已就绪
+                        }
+                        else -> ConnectResult.需要登录
                     }
                 } else {
                     store.setCurrent(cfg.id)

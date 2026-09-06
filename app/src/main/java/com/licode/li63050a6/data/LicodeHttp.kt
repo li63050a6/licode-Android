@@ -26,6 +26,14 @@ class LicodeHttp(private val prefs: SharedPreferences) {
 
     fun clientTrustAll(server: ServerConfig): OkHttpClient = build(server, trustAll = true)
 
+    /** 无服务器限定的普通客户端（rootfs 下载、本机健康探测）。 */
+    fun plain(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
     private fun build(server: ServerConfig, trustAll: Boolean): OkHttpClient {
         val b = OkHttpClient.Builder()
             .cookieJar(PersistentCookieJar(prefs))
